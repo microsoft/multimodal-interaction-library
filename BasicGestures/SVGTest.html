@@ -1,0 +1,39 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>SVG Test</title>
+</head>
+<body>
+    <svg width="1200" height="800" style="background-color: whitesmoke">
+        <g>
+            <rect x="0" y="0" width="200" height="200" style="stroke: gray; stroke-width: 2px; fill: transparent" />
+            <circle cx="150" cy="150" r="10" fill="red" opacity="0.5" />
+        </g>
+        <!-- 150 = PositionRelativeToViewPortTopLeft = 150 + (0) [scaledPixelPoint + (matrix.e)] -->
+        <g transform="translate(150, 150) scale(2) translate(-150, -150)">
+            <circle cx="150" cy="150" r="10" fill="red" opacity="0.5" />
+        </g>
+
+        <g transform="translate(-100, -100)">
+            <circle cx="150" cy="150" r="10" fill="blue" opacity="0.5" />
+        </g>
+        <!-- 50 = PositionRelativeToViewPortTopLeft = 150 + (-100) [scaledPixelPoint + (matrix.e)] -->
+        <g transform="translate(50, 50) scale(2) translate(-50, -50)">
+            <g transform="translate(-100, -100)">
+                <circle cx="150" cy="150" r="10" fill="blue" opacity="0.5" />
+            </g>
+        </g>
+
+        <g transform="translate(-20, -20) scale(1.5)">
+            <circle cx="80" cy="80" r="10" fill="green" opacity="0.5" />
+        </g>
+        <!-- 100 = PositionRelativeToViewPortTopLeft = 120 (from 80 * 1.5) + (-20) [scaledPixelPoint + (matrix.e)] -->
+        <g transform="translate(100, 100) scale(2) translate(-100, -100)">
+            <g transform="translate(-20, -20) scale(1.5)">
+                <circle cx="80" cy="80" r="10" fill="green" opacity="0.5" />
+            </g>
+        </g>
+    </svg>
+</body>
+</html>

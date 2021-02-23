@@ -1,0 +1,612 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <!-- <meta http-equiv="X-UA-Compatible" content="IE=edge" /> -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta charset="utf-8" />
+
+    <!-- d3.js (version 4.12.2) was copied locally from the ZIP file on https://d3js.org/. It was copied locally (rather than referencesdby URL) primarily to get VS IntelliSense to work:
+         VS2017 auto-registers TypeScript type definitions for common JS files (like d3.js) and copies the *.d.ts files to C:\Users\richardh\AppData\Local\Microsoft\TypeScript\3.1\node_modules\@types);
+         see https://docs.microsoft.com/en-us/visualstudio/ide/javascript-intellisense#TsDeclFiles and read "Automatic acquisition of type definitions" -->
+    <script src="Scripts/d3.js"></script>
+    <script src="Scripts/MILJS.js"></script>
+    <link rel="stylesheet" type="text/css" href="default.css">
+</head>
+
+<body onload="load()">
+    <div id="main">
+        <div id="sketch"></div>
+        <div id="output">Ready</div>
+    </div>
+
+    <script>
+        'use strict';
+
+        function load()
+        {
+            // Check for a compatible browser (currently only IE11)
+            if (navigator.userAgent.indexOf("rv:11.0) like Gecko") == -1)
+            {
+                var isIERunningInCompatabilityMode = (navigator.userAgent.indexOf("Trident") != -1) && (navigator.userAgent.indexOf("MSIE") != -1);
+                var msg = "Attention: MILJS.js currently only runs on IE11" +
+                    (isIERunningInCompatabilityMode ? ", and with Tools -> Compatability View settings -> 'Display intranet sites in Compatability View' turned off (unchecked)." : " (not " + navigator.userAgent + ").");
+                alert(msg);
+            }
+            else
+            {
+                start();
+            }
+        }
+
+        function start()
+        {
+            var _margin = { top: 0, right: 0, bottom: 0, left: 0 },
+                _width = 1200 - _margin.left - _margin.right,
+                _height = 800 - _margin.top - _margin.bottom;
+
+            var _outputDiv = d3.select('#output');
+            var _lineGenerator = d3.line()
+                .curve(d3.curveBasis) // See http://bl.ocks.org/mbostock/4342190
+                .x(function (d) { return d.x; })
+                .y(function (d) { return d.y; });
+
+            var _svg = d3.select("#sketch")
+                .append("svg")
+                .attr("width", _width + _margin.left + _margin.right)
+                .attr("height", _height + _margin.top + _margin.bottom)
+                .attr("overflow", "hidden"); // Clip to bounds
+
+            // We append our objects into a group element so that we can do zoom and pan (there is no 'transform' attribute directly on an svg)
+            var _g = d3.select(MIL.Initialize(_svg));
+
+            // We make the DIV that will contain the SVG focusable [so that we can respond to Ctrl+Z, etc.], but hide the focus rectangle
+            var sketchDiv = d3.select("#sketch");
+
+            MIL.Utils.EnableKeyboardHandler(sketchDiv, true); // We want to install the MIL keyboard handlers first
+
+            sketchDiv
+                .style("outline", "none") // Hide the focus rectangle
+                .on("keydown", onKeyDown); // To capture Ctrl+Z and Delete
+
+            // ---------------------
+            // START-REGION MIL Usage
+            // ---------------------
+            document.title = "Demo of MIL [" + MIL.Version() + "]";
+
+            var _selectionRect = null;
+            var _isCombiningLasso = false;
+            var _allowPanning = true;
+
+            // MIL.DebugFeature(MIL.FeatureNames.KeyboardHandler, true);
+            MIL.DebugFeature(MIL.FeatureNames.GestureRecognition, true);
+            //MIL.DebugFeature(MIL.FeatureNames.ShapeRecognition, true);
+
+            MIL.Settings(_svg).MinZoomLevel(0.5).MaxZoomLevel(2).IsRightMouseClickAllowed(false).InkAutoCombineMode(MIL.InkAutoCombineMode.ContainedWithin);
+            MIL.GestureDefaults.Target(_svg).StartedHandler(onGestureStarted).EndedHandler(onGestureEnded).CancelledHandler(onGestureCancelled).RecognitionTimeoutInMs(150);
+            MIL.Controls.Frame(_svg).Class("MILFrameControl");
+
+            MIL.AddGesture(MIL.CreateGesture("PanWithPen").PointerType("pen").Conditional(function () { return ((MIL.PenPressure(this.Target()) >= 0.75) && MIL.Utils.IsNoKeyPressed()); }));
+            MIL.AddGesture(MIL.CreateGesture("PanWithTouch").PointerType("touch"));
+            MIL.AddGesture(MIL.CreateGesture("ResetPanAndZoom").PointerType("touch:2").Conditional(function () { return (MIL.Utils.IsKeyPressed("R")); }));
+            MIL.AddGesture(MIL.CreateGesture("Zoom").PointerType("touch:2").CheckForGesturesOnEnd(true)); // We set CheckForGesturesOnEnd(true) to allow Zoom to become a Pan if only one finger is lifted
+            MIL.AddGesture(MIL.CreateGesture("LassoSelection").PointerType("pen").Conditional(function () { return ((MIL.PenButtons(this.Target()) == MIL.PenButton.Barrel) || MIL.Utils.IsKeyPressed("C")); }));
+            MIL.AddGesture(MIL.CreateGesture("RectSelection").PointerType("pen|mouse+touch"));
+            MIL.AddGesture(MIL.CreateGesture("DrawWithPen").PointerType("pen")).Conditional(function () { return (MIL.Utils.IsNoKeyPressed()); });
+
+            function onGestureStarted()
+            {
+                var gesture = this;
+
+                log("The '" + gesture.Name() + "' gesture started (using " + gesture.ActivePointerList().join(", ") + ")");
+
+                switch (gesture.Name())
+                {
+                    case "PanWithPen":
+                    case "PanWithTouch":
+                        var prevPanTouchPoint = gesture.GetCurrentScreenPoint("{P1}");
+
+                        gesture.OnMoveHandler(function onPanMove()
+                        {
+                            var newTouchPoint = this.GetCurrentScreenPoint("{P1}");
+                            var deltaXInPixels = newTouchPoint.x - prevPanTouchPoint.x;
+                            var deltaYInPixels = newTouchPoint.y - prevPanTouchPoint.y;
+
+                            if (_allowPanning)
+                            {
+                                MIL.PanRelative(_svg, deltaXInPixels, deltaYInPixels);
+                                log("[" + gesture.Name() + "] Panned to: Horizontal, " + MIL.Pan(_svg).left.toFixed(2) + " Vertical " + MIL.Pan(_svg).top.toFixed(2), false);
+                            }
+                            prevPanTouchPoint = newTouchPoint;
+                        });
+                        break;
+
+                    case "Zoom":
+                        var startZoomDistance = gesture.GetDistance("{P1}", "{P2}");
+                        var startZoomLevel = MIL.Zoom(_svg);
+
+                        _allowPanning = false;
+
+                        gesture.OnMoveHandler(function onZoomMove()
+                        {
+                            var zoomDistance = this.GetDistance("{P1}", "{P2}");
+                            var focalScreenPoint = MIL.Utils.GetLineMidPoint(this.GetCurrentScreenPoint("{P1}"), this.GetCurrentScreenPoint("{P2}"));
+                            var currZoomLevel = MIL.Zoom(_svg);
+                            var newZoomLevel = (zoomDistance / startZoomDistance) * startZoomLevel;
+
+                            if (newZoomLevel != currZoomLevel)
+                            {
+                                MIL.Zoom(_svg, newZoomLevel, focalScreenPoint);
+                                log("Zoomed to: " + MIL.Zoom(_svg).toFixed(3) + "x", false);
+                            }
+                        });
+                        break;
+
+                    case "ResetPanAndZoom":
+                        d3.transition()
+                            .duration(750)
+                            .tween("AnimateZoom", function animateZoom()
+                            {
+                                var interpolateZoomLevel = d3.interpolateNumber(MIL.Zoom(_svg), 1);
+                                var interpolatePanLeft = d3.interpolateNumber(MIL.Pan(_svg).left, 0);
+                                var interpolatePanTop = d3.interpolateNumber(MIL.Pan(_svg).top, 0);
+
+                                return (function onAnimationTick(t)
+                                {
+                                    MIL.Zoom(_svg, interpolateZoomLevel(t));
+                                    MIL.PanAbsolute(_svg, interpolatePanLeft(t), interpolatePanTop(t));
+                                });
+                            })
+                            .on("end", function () { log("Zoom reset to 1.0x, Pan reset to vertical 0, horizontal 0"); });
+                        break;
+
+                    case "LassoSelection":
+                        _isCombiningLasso = MIL.Utils.IsKeyPressed("C");
+                        gesture.Ink("{P1}").Class(_isCombiningLasso ? "combiningLassoLine" : "lassoLine").IsAutoClose(true).Start();
+                        break;
+
+                    case "RectSelection":
+                        if (gesture.GetDistance("{P1}", "{P2}") < 200) // Just to demo Gesture.Cancel()
+                        {
+                            gesture.Cancel("Distance between " + gesture.GetPointerNameByOrdinal("{P1}") + " and " + gesture.GetPointerNameByOrdinal("{P2}") + " was too small");
+                        }
+                        else
+                        {
+                            gesture.OnMoveHandler(onRectSelectionMove);
+                        }
+                        break;
+
+                    case "DrawWithPen":
+                        gesture.Ink("{P1}").Class("MILLine").EraserClass("MILEraser").HullType(MIL.InkHullType.Concave).HullColor("debug").ResizeWith("touch:2").Start();
+                        break;
+                }
+            }
+
+            function onGestureCancelled(reason)
+            {
+                var gesture = this;
+            }
+
+            function onGestureEnded(liftedPointerID)
+            {
+                var gesture = this;
+
+                log("The '" + gesture.Name() + "' gesture ended");
+
+                switch (gesture.Name())
+                {
+                    case "PanWithPen":
+                    case "PanWithTouch":
+                        log("[" + gesture.Name() + "] Panned to: Horizontal, " + MIL.Pan(_svg).left.toFixed(2) + " Vertical " + MIL.Pan(_svg).top.toFixed(2));
+                        break;
+
+                    case "Zoom":
+                        _allowPanning = true;
+                        log("Zoomed to: " + MIL.Zoom(_svg).toFixed(3) + "x");
+                        break;
+
+                    case "LassoSelection":
+                        // Select any previously drawn paths that [at least 80% of] lie within the lasso region
+                        var inks = MIL.Utils.FindShapeElementsInRegion(_g, "ink", gesture.Ink(), selectionFilter, 0.8);
+
+                        // Fade-out the lasso
+                        MIL.Utils.Fade(gesture.Ink().Path(), 400, null, function onFadeComplete()
+                        {
+                            // Remove the lasso ink
+                            gesture.Ink().Delete();
+
+                            // This should probably be a separate "LassoCombineGesture"
+                            if (_isCombiningLasso)
+                            {
+                                // Note: The parent of the new combined path will be the 'LassoSelection' gesture because that's the gesture doing the combining
+                                var ink = gesture.CombineInks(inks, "MILCombinedLine");
+                                if (ink)
+                                {
+                                    addDrawnItemGestures(ink);
+                                }
+                            }
+                            _isCombiningLasso = false;
+                        });
+                        break;
+
+                    case "RectSelection": // An alternative to "LassoSelection"
+                        var rectPoints = MIL.Utils.GetPointsFromRect({ x: +_selectionRect.attr("x"), y: +_selectionRect.attr("y"), width: +_selectionRect.attr("width"), height: +_selectionRect.attr("height") });
+
+                        // Select any previously drawn paths that [at least 80% of] lie within the rect
+                        MIL.Utils.FindShapeElementsInRegion(_g, "path", rectPoints, selectionFilter, 0.8);
+
+                        // Fade-out the selection rect
+                        MIL.Utils.Fade(_selectionRect, 600, "rectSelectionFinal", function onFadeComplete()
+                        {
+                            _selectionRect.remove();
+                            _selectionRect = null;
+                        });
+                        break;
+
+                    case "DrawWithPen":
+                        var ink = gesture.Ink();
+
+                        if (ink.IsEraserDrawing())
+                        {
+                            disableInkHullsThatIntersectWithEraserPath(ink.PathPoints());
+                        }
+                        addDrawnItemGestures(ink);
+                        break;
+                }
+            }
+
+            function addDrawnItemGestures(ink)
+            {
+                if (ink.HullPath() != null)
+                {
+                    MIL.GestureDefaults.Reset().Target(ink.HullPath()).GroupName("DrawnItemGestures");
+
+                    // Add a 'Double-Tap' gesture
+                    var doubleTapGesture = MIL.BuiltInGestures.Tap("HullDoubleTap", ink.HullPath(), "touch", function onHullDoubleTap() { ink.Path().classed("selectedLine", !ink.Path().classed("selectedLine")); }, 100, 5);
+                    MIL.AddGesture(doubleTapGesture.RepeatCount(2).RepeatTimeoutInMs(175));
+
+                    // Add a drag gesture
+                    var dragGesture = MIL.CreateGesture("HullDrag*") // The '*' will get replaced with a unique ID
+                        .PointerType("touch")
+                        .GestureStartedHandler(function onHullDragStarted()
+                        {
+                            ink.DragStart(this, "selectedLine");
+                            log("Dragging...");
+                        })
+                        .GestureEndedHandler(function onHullDragEnded()
+                        {
+                            ink.DragEnd();
+                            log("Drag ended");
+
+                            if (ink.Path().classed("selectedLine"))
+                            {
+                                // Restore the original class for all selected paths
+                                _svg.selectAll("path.selectedLine").classed("selectedLine", false)
+                            }
+                        });
+                    MIL.AddGesture(dragGesture);
+
+                    // Add a shape-recognition gesture
+                    var boundingRect = MIL.Utils.GetBoundingRectForPoints(ink.PathPoints());
+                    var targetWidth = boundingRect.width;
+                    var targetHeight = boundingRect.height;
+                    var shapeRecognitionGesture = MIL.BuiltInGestures.ShapeRecognizer("ShapeRecognizer", ink.HullPath(), "pen", 0.8, function onShapeRecognized(shapeName)
+                    {
+                        log("Shape recognized: " + (shapeName || "(None)"));
+
+                        if (shapeName)
+                        {
+                            switch (shapeName)
+                            {
+                                case MIL.RecognizableShapes.CheckMark:
+                                case MIL.RecognizableShapes.Triangle:
+                                case MIL.RecognizableShapes.XOut:
+                                    var shapeColorMappingScale = d3.scaleOrdinal().domain(["CheckMark", "Triangle", "XOut"]).range(["greenClass", "purpleClass", "redClass"]);
+                                    var colorClass = shapeColorMappingScale(shapeName);
+                                    ink.Path().classed("greenClass", false).classed("redClass", false).classed("purpleClass", false).classed(colorClass, true);
+                                    break;
+
+                                case MIL.RecognizableShapes.StrikeThroughHorizontal:
+                                case MIL.RecognizableShapes.StrikeThroughDiagonal:
+                                    ink.Delete();
+                                    break;
+
+                                case MIL.RecognizableShapes.Star:
+                                    var colorScale = d3.scaleLinear().domain([0, 180, 359.999]).range(["red", "purple", "green"]);
+
+                                    MIL.RemoveGesturesByTarget(ink.HullPath(), "CircularDial");
+                                    var circularDialGesture = MIL.BuiltInGestures.CircularDial("CircularDial", ink.HullPath(), "any", function onAngleChanged(angle)
+                                    {
+                                        ink.Path().style("fill", colorScale(angle));
+                                    })
+                                        .GestureEndedHandler(function ()
+                                        {
+                                            MIL.RemoveGestureByName(circularDialGesture.Name());
+                                        });
+                                    MIL.AddGesture(circularDialGesture);
+                                    /*
+                                    var radialSwipeGesture = MIL.BuiltInGestures.RadialSwipe("RadialSwipe", ink.HullPath(), "any", 8, 75, function onSwipe(radialSwipeResult)
+                                    {
+                                        log("Radial swipe: " + ((radialSwipeResult == null) ? "(None)" : radialSwipeResult.compassHeading + " (" + radialSwipeResult.heading.toFixed(2) + ")"));
+                                    });
+                                    MIL.AddGesture(radialSwipeGesture);
+                                    */
+                                    break;
+                            }
+                        }
+                    }, "cometTailLine", [MIL.RecognizableShapes.CheckMark, MIL.RecognizableShapes.Triangle, MIL.RecognizableShapes.XOut, MIL.RecognizableShapes.Star, MIL.RecognizableShapes.StrikeThroughHorizontal, MIL.RecognizableShapes.StrikeThroughDiagonal], targetWidth, targetHeight);
+                    MIL.AddGesture(shapeRecognitionGesture.Conditional(function () { return (MIL.Utils.IsKeyPressed("X")); }));
+                }
+            }
+
+            function selectionFilter(pathDomElement)
+            {
+                var path = null;
+
+                if (MIL.IsInstanceOfInk(pathDomElement))
+                {
+                    var ink = pathDomElement
+                    path = ink.Path();
+                }
+                else
+                {
+                    path = d3.select(pathDomElement);
+                }
+
+                var isSelectable = (path.classed("MILLine") || path.classed("MILCombinedLine")) && !path.classed("immovable");
+
+                if (isSelectable && !_isCombiningLasso)
+                {
+                    path.classed("selectedLine", true);
+                }
+
+                return (isSelectable);
+            }
+
+            function onRectSelectionMove()
+            {
+                var gesture = this;
+
+                if (gesture != null)
+                {
+                    var rect = MIL.Utils.GetRectFromPoints(gesture.GetCurrentSvgPoint("{P1}"), gesture.GetCurrentSvgPoint("{P2}"));
+
+                    if (_selectionRect == null)
+                    {
+                        _selectionRect = _g.append("rect").classed("rectSelection", true);
+                    }
+                    _selectionRect.attr("x", rect.x).attr("y", rect.y).attr("width", rect.width).attr("height", rect.height);
+                }
+            }
+
+            function disableInkHullsThatIntersectWithEraserPath(eraserPathPoints)
+            {
+                // Disable "ink" hulls (used for dragging) that intersect with the erasure path [since we cannot move the portion of the erasure line that overlaps with the hull (and its corresponding path)].
+                // Note: This is an inelegant solution because it seems like an arbitrary restriction to the user.
+                if (eraserPathPoints.length > 0)
+                {
+                    eraserPathPoints = MIL.Utils.ConvertXYPointsToPolygonPoints(eraserPathPoints);
+
+                    MIL.Inks().forEach(function processInk(ink)
+                    {
+                        if (MIL.Utils.IsAnyPointInPolygon(ink.PathPoints(), eraserPathPoints))
+                        {
+                            ink.DeleteHull();
+                            ink.Path().classed("immovable", true);
+                        }
+                    });
+                }
+            }
+
+            // -------------------
+            // END-REGION MIL Usage
+            // -------------------
+
+            // ---------------------------------
+            // START-REGION Basic non-MIL drawing
+            // ---------------------------------
+
+            // Add our own pointer-event handlers just to demonstrate peaceful coexistence with MIL
+            _svg.node().addEventListener("pointerdown", onPointerDown);
+            _svg.node().addEventListener("pointerup", onPointerUp);
+            _svg.node().addEventListener("pointerenter", onPointerEnter);
+            _svg.node().addEventListener("pointerleave", onPointerLeave);
+
+            var _inProgressDrawCount = 0;
+            var _drawingPath = {}; // Key: pointerID, Value: path
+
+            // Start drawing [with a pointer]
+            function onPointerDown(e)
+            {
+                var pointerID = makePointerID(e);
+                // Since the main 'g' element can be transformed (ie. zoomed and/or panned), we need to transform the e.clientX/Y point into the coordinate space of the [potentially transformed] 'g' element
+                var pointInTransformSpace = MIL.TransposePointer(e, _g);
+                var x = pointInTransformSpace.x, y = pointInTransformSpace.y;
+                var point = { x: x, y: y };
+                var d = "M" + point.x + "," + point.y + " L" + point.x + "," + point.y; // We add this "point" in case the draw turns out  to be just a single [mouse] click (ie. onPointerMove never fires)
+
+                // if (MIL.IsPropagatedEvent(e)) { log("Received MIL-propagated event: " + e.type + " (" + e.pointerType + ")"); }
+
+                if (++_inProgressDrawCount == 1)
+                {
+                    _svg.node().addEventListener("pointermove", onPointerMove);
+                }
+
+                _drawingPath[pointerID] = _g.append("path").attr("class", e.pointerType + "Line").attr("d", d);
+            }
+
+            function onPointerMove(e)
+            {
+                var pointerID = makePointerID(e);
+                var path = _drawingPath[pointerID];
+
+                // if (MIL.IsPropagatedEvent(e)) { log("Received MIL-propagated event: " + e.type + " (" + e.pointerType + ")"); }
+
+                if (path === undefined)
+                {
+                    // A movement of the touch/mouse/pen has been detected, but before we got a 'pointerDown' for it [which is a valid condition]
+                    return;
+                }
+
+                // Since the main 'g' element can be transformed (ie. zoomed and/or panned), we need to transform the e.clientX/Y point into the coordinate space of the [potentially transformed] 'g' element
+                var pointInTransformSpace = MIL.TransposePointer(e, _g);
+                var x = pointInTransformSpace.x, y = pointInTransformSpace.y;
+                var point = { x: x, y: y };
+                var d = path.attr("d") + " L" + point.x + "," + point.y;
+
+                path.attr("d", d);
+            }
+
+            // End drawing [with a pointer]
+            function onPointerUp(e)
+            {
+                var pointerID = makePointerID(e);
+
+                // if (MIL.IsPropagatedEvent(e)) { log("Received MIL-propagated event: " + e.type + " (" + e.pointerType + ")"); }
+
+                delete _drawingPath[pointerID];
+
+                if ((_inProgressDrawCount > 0) && (--_inProgressDrawCount == 0))
+                {
+                    _svg.node().removeEventListener("pointermove", onPointerMove);
+                }
+            }
+
+            function onPointerEnter(e)
+            {
+                if (e.pointerType == "mouse")
+                {
+                    _svg.node().style.cursor = "default";
+                }
+            }
+
+            function onPointerLeave(e)
+            {
+                // Note: We have to check isInkDragInProgress() because when we drag using the mouse we'll get a PointerLeave
+                //       event when the mouse leaves the hull, at which point the mouse cursor would unexpectedly disappear
+                if ((e.pointerType == "mouse") && !MIL.IsInkDragInProgress())
+                {
+                    _svg.node().style.cursor = "none";
+                }
+            }
+
+            function makePointerID(e)
+            {
+                return ("PointerID_" + e.pointerType + "_" + e.pointerId);
+            }
+
+            // -------------------------------
+            // END-REGION Basic non-MIL drawing
+            // -------------------------------
+
+            function log(msg, logToConsole)
+            {
+                _outputDiv.text(msg);
+
+                if ((logToConsole === undefined) || logToConsole)
+                {
+                    MIL.Utils.Log(msg, "App")
+                }
+            }
+
+            function onKeyDown()
+            {
+                var e = d3.event;
+
+                // Note that e.keyCode can return "virtual key" codes (see https://lists.w3.org/Archives/Public/www-dom/2010JulSep/att-0182/keyCode-spec.html)
+                var keyCode = (e.key.length == 1) ? e.key.toUpperCase().charCodeAt(0) : e.keyCode; // Eg. For Delete, e.key is "Del"
+                // log("KeyCode: " + keyCode + " (" + e.key + ")");
+
+                switch (keyCode)
+                {
+                    // Delete selected ink paths (if any)
+                    case MIL.Utils.Keys.DELETE:
+                        MIL.Inks("selectedLine").forEach(function (ink)
+                        {
+                            ink.Delete();
+                        });
+                        break;
+
+                    // Ctrl+Z ("undo")
+                    case "Z".charCodeAt(0):
+                        if (e.ctrlKey)
+                        {
+                            // Find all child elements of the SVG [which will include the "content" g element, which we never want to delete] but exclude any MIL Controls (like the Ruler)
+                            var selection = _svg.selectAll("*").filter(function () { return (!MIL.Controls.IsControl(this)); });
+                            var lastDomElement = d3.select(selection.nodes()[selection.size() - 1]).node();
+
+                            if (!(lastDomElement instanceof SVGGElement))
+                            {
+                                var ink = MIL.GetInkByElement(lastDomElement);
+
+                                if (ink)
+                                {
+                                    ink.Delete();
+                                }
+                                else
+                                {
+                                    d3.select(lastDomElement).remove();
+                                }
+                                log("Undo");
+                            }
+                        }
+                        break;
+
+                    // Show/hide MIL Ruler control
+                    case " ".charCodeAt(0):
+                        var ruler = MIL.Controls.Ruler(_svg).Class("MILRulerControl");
+
+                        if (ruler.ToolbarItemCount() == 0)
+                        {
+                            // Configure the toolbar
+                            ruler
+                                .ToolbarItemStyler(function styleToolbarItem(itemPath, toolbarItemNumber)
+                                {
+                                    // Style the itemPath "icon"
+                                    var ruler = this;
+                                    toolbarItemStyler.call(ruler, itemPath, toolbarItemNumber);
+                                })
+                                .OnToolbarSelectionChanged(function (oldItemNumber)
+                                {
+                                    var ruler = this;
+                                    var newItemNumber = ruler.SelectedToolbarItemNumber();
+
+                                    log("Ruler toolbar item #" + ((newItemNumber == -1) ? ((oldItemNumber + 1) + " deselected") : ((newItemNumber + 1) + " selected")));
+                                })
+                                .ToolbarItemCount(6);
+                        }
+
+                        // Toggle the visibility of the ruler
+                        ruler.IsVisible(!ruler.IsVisible());
+
+                        // If needed, bring the ruler into view
+                        if (ruler.IsVisible() && !ruler.IsInView())
+                        {
+                            ruler.CenterInView();
+                        }
+                        break;
+
+                    // MIL debugging aid
+                    case "?".charCodeAt(0):
+                        MIL.ShowDebugInfo();
+                        break;
+                }
+            }
+
+            function toolbarItemStyler(itemPath, itemNumber)
+            {
+                var ruler = this;
+
+                // A simple 'O' (will automatically be scaled by the ruler)
+                // Note: Path data can only contain M/L/m/a commands
+                itemPath.attr("d", MIL.Utils.GetCirclePathData(50, 50, 50) + " " + MIL.Utils.GetCirclePathData(50, 50, 25))
+                    .style("fill", "LightSteelBlue")
+                    .style("fill-rule", "evenodd")
+                    .style("stroke", "CornflowerBlue")
+                    .style("stroke-width", (0.5 * (itemNumber + 1)) + "px");
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "alwaysStrict": true,
+    "noImplicitAny": true,
+    "noEmitOnError": true,
+    "removeComments": false,
+    "stripInternal": true, // Excludes members marked with "@internal" from being emitted to the .d.ts file
+    "declaration": true,
+    "sourceMap": true,
+    "lib": [ "dom", "es2015" ], // "es2015" is required so that d3.d.ts will compile (because it uses the ES2015 'Map' type)
+    "target": "es5", // Not specifying es2015 allows us to use 'class' in our .ts code but NOT emit 'class' in the .js (so that it can be still run in IE11)
+    "outFile": "MIL.js"
+  },
+  "files": [
+    "MIL.ts",
+    "MIL_Utils.ts",
+    "MIL_Settings.ts",
+    "MIL_GestureDefaults.ts",
+    "MIL_Ink.ts",
+    "MIL_Gesture.ts",
+    "MIL_BuiltInGestures.ts",
+    "MIL_Controls.ts"
+  ]
+}

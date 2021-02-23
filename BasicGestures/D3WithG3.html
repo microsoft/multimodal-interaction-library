@@ -1,0 +1,257 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>D3 with MIL Demo</title>
+    <meta charset="utf-8">
+
+    <style>
+        line.links {
+            stroke: #999;
+            stroke-opacity: 0.6;
+        }
+
+        circle.nodes {
+            stroke: #fff;
+            stroke-width: 1.5px;
+        }
+
+        svg {
+            background: #eee;
+            touch-action: none; /* Turn off default touch gestures (panning and pinching of the entire page) provided by the browser */
+        }
+
+        rect.MILFrameControl {
+            fill: transparent;
+            stroke-width: 3px;
+            stroke: firebrick;
+        }
+
+        path {
+            fill: transparent; /* Note: Using 'none' will prevent the path-fill area from being hit-testable [but impacts drag performance], whereas 'transparent' IS hit-testable [but does not impact drag performance] */
+            stroke-width: 4px;
+            stroke-linejoin: round;
+            stroke-linecap: round; /* Smooths out the line */
+        }
+
+        path.lassoLine {
+            fill: none;
+            stroke-width: 2px;
+            stroke: magenta;
+            stroke-dasharray: 2 4;
+        }
+
+        circle.selected {
+            fill: yellow;
+            stroke: dimgray;
+        }
+
+        #svgHostDiv {
+            outline: none; /* Hide focus rect */
+        }
+    </style>
+
+    <script src="Scripts/d3.js"></script>
+    <script src="Scripts/MILJS.js"></script>
+</head>
+
+<body>
+    <div id="svgHostDiv">
+        <svg width="1200" height="800"></svg>
+    </div>
+
+    <script>
+
+        var svg = d3.select("svg").attr("overflow", "hidden"); // Clip to bounds
+        var width = +svg.attr("width"), height = +svg.attr("height");
+
+        // Initialize MIL
+        var _g = d3.select(MIL.Initialize(svg));
+        MIL.Utils.EnableKeyboardHandler("#svgHostDiv", true);
+
+        var _lineGenerator = d3.line()
+            .curve(d3.curveBasis)
+            .x(function (d) { return (d.x); })
+            .y(function (d) { return (d.y); });
+
+        var color = d3.scaleOrdinal(d3.schemeCategory20);
+
+        var simulation = d3.forceSimulation()
+            .force("link", d3.forceLink().id(function (d) { return d.id; }))
+            .force("charge", d3.forceManyBody())
+            .force("center", d3.forceCenter(width / 2, height / 2));
+
+        d3.json("D3WithMIL.json", function onParseComplete(error, graph)
+        {
+            if (error) throw error;
+
+            var link = _g.append("g")
+                .selectAll("line")
+                .data(graph.links)
+                .enter().append("line")
+                .attr("class", "links")
+                .attr("stroke-width", function (d) { return Math.sqrt(d.value); });
+
+            var node = _g.append("g")
+                .selectAll("circle")
+                .data(graph.nodes)
+                .enter().append("circle")
+                .attr("r", 5)
+                .attr("class", "nodes")
+                .attr("fill", function (d) { return color(d.group); })
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended));
+
+            node.append("title")
+                .text(function (d) { return d.id; });
+
+            simulation
+                .nodes(graph.nodes)
+                .on("tick", ticked);
+
+            simulation.force("link")
+                .links(graph.links);
+
+            function ticked()
+            {
+                link
+                    .attr("x1", function (d) { return d.source.x; })
+                    .attr("y1", function (d) { return d.source.y; })
+                    .attr("x2", function (d) { return d.target.x; })
+                    .attr("y2", function (d) { return d.target.y; });
+
+                node
+                    .attr("cx", function (d) { return d.x; })
+                    .attr("cy", function (d) { return d.y; });
+            }
+        });
+
+        function dragstarted(d)
+        {
+            if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(d)
+        {
+            d.fx = d3.event.x;
+            d.fy = d3.event.y;
+        }
+
+        function dragended(d)
+        {
+            if (!d3.event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+
+        // ---------------------
+        // START-REGION MIL Usage
+        // ---------------------
+
+        var _allowPanning = true;
+
+        MIL.Settings(svg).MinZoomLevel(0.5).MaxZoomLevel(2).IsRightMouseClickAllowed(false);
+        MIL.GestureDefaults.Target(svg).StartedHandler(onGestureStarted).EndedHandler(onGestureEnded).RecognitionTimeoutInMs(150);
+        MIL.Controls.Frame(svg).Class("MILFrameControl");
+
+        MIL.AddGesture(MIL.CreateGesture("Pan").PointerType("touch"));
+        MIL.AddGesture(MIL.CreateGesture("Zoom").PointerType("touch:2").CheckForGesturesOnEnd(true)); // We set CheckForGesturesOnEnd(true) to allow Zoom to become a Pan if only one finger is lifted
+        MIL.AddGesture(MIL.CreateGesture("LassoSelection").PointerType("pen").Conditional(function () { return (MIL.PenButtons(this.Target()) == MIL.PenButton.Barrel); }));
+
+        function log(msg)
+        {
+            MIL.Utils.Log(msg, "App")
+        }
+
+        function onGestureStarted()
+        {
+            var gesture = this;
+
+            log("The '" + gesture.Name() + "' gesture started (using " + gesture.ActivePointerList().join(", ") + ")");
+
+            switch (gesture.Name())
+            {
+                case "Zoom":
+                    var startZoomDistance = gesture.GetDistance("{P1}", "{P2}");
+                    var startZoomLevel = MIL.Zoom(svg);
+
+                    _allowPanning = false;
+
+                    gesture.OnMoveHandler(function onZoomMove()
+                    {
+                        var zoomDistance = this.GetDistance("{P1}", "{P2}");
+                        var prevZoom = MIL.Zoom(svg);
+                        var newZoom = (zoomDistance / startZoomDistance) * startZoomLevel;
+
+                        if (newZoom != prevZoom)
+                        {
+                            MIL.Zoom(svg, newZoom);
+                        }
+                    });
+                    break;
+
+                case "Pan":
+                    var prevPanTouchPoint = gesture.GetCurrentScreenPoint("{P1}");
+
+                    gesture.OnMoveHandler(function onPanMove()
+                    {
+                        var newTouchPoint = this.GetCurrentScreenPoint("{P1}");
+                        var deltaXInPixels = newTouchPoint.x - prevPanTouchPoint.x;
+                        var deltaYInPixels = newTouchPoint.y - prevPanTouchPoint.y;
+
+                        if (_allowPanning)
+                        {
+                            MIL.PanRelative(svg, deltaXInPixels, deltaYInPixels);
+                        }
+                        prevPanTouchPoint = newTouchPoint;
+                    });
+                    break;
+
+                case "LassoSelection":
+                    gesture.Ink("{P1}").Class("lassoLine").IsAutoClose(true).Start();
+                    break;
+            }
+        }
+
+        function onGestureEnded(liftedPointerID)
+        {
+            var gesture = this;
+
+            log("The '" + gesture.Name() + "' gesture ended");
+
+            switch (gesture.Name())
+            {
+                case "Zoom":
+                    _allowPanning = true;
+                    break;
+
+                case "LassoSelection":
+                    // Select/de-select the circles whose centroids lie within the lasso region
+                    var circles = MIL.Utils.FindShapeElementsInRegion(_g, "circle", gesture.Ink(), function filterNode(circleDomElement)
+                    {
+                        // This is a 'filter' function, but we can also use it to do the actual selection/de-selection
+                        var circle = d3.select(circleDomElement);
+                        circle.classed("selected", !circle.classed("selected"));
+
+                        return (true); // Include this circle in the results
+                    });
+
+                    // Fade-out the lasso
+                    MIL.Utils.Fade(gesture.Ink().Path(), 400, null, function onFadeComplete()
+                    {
+                        // Remove the lasso ink
+                        gesture.Ink().Delete();
+                    });
+                    break;
+            }
+        }
+
+        // -------------------
+        // END-REGION MIL Usage
+        // -------------------
+    </script>
+</body>
+</html>

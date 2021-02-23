@@ -1,0 +1,1093 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>D3 with MIL Demo II</title>
+    <meta charset="utf-8">
+
+    <style>
+        svg {
+            background: #eee;
+            touch-action: none; /* Turn off default touch gestures (panning and pinching of the entire page) provided by the browser */
+        }
+
+        rect.MILFrameControl {
+            fill: transparent;
+            stroke-width: 3px;
+            stroke: firebrick;
+        }
+
+        path {
+            fill: transparent; /* Note: Using 'none' will prevent the path-fill area from being hit-testable [but impacts drag performance], whereas 'transparent' IS hit-testable [but does not impact drag performance] */
+            stroke-width: 4px;
+            stroke-linejoin: round;
+            stroke-linecap: round; /* Smooths out the line */
+        }
+
+            path.lassoLine {
+                fill: none;
+                stroke-width: 2px;
+                stroke: magenta;
+                stroke-dasharray: 2 4;
+            }
+
+            path.groupLine {
+                fill: none;
+                stroke-width: 2px;
+                stroke: blue;
+                stroke-dasharray: 2 4;
+            }
+
+            path.cometTailLine {
+                fill: none;
+                stroke-width: 5px;
+                stroke: rgba(0, 180, 0, 0.5);
+            }
+
+        circle.copySelected {
+            stroke-width: 5px;
+            stroke-dasharray: 10 3;
+            stroke: lightyellow;
+        }
+
+        circle {
+            fill: lightsteelblue;
+            stroke: slateblue;
+            stroke-width: 1px;
+            opacity: 0.8; /* So that when circles overlap we can still see what lies beneath */
+        }
+
+        line.selectBetweenLine {
+            stroke: gray;
+            stroke-dasharray: 10 3 3 3;
+        }
+
+        #svgHostDiv {
+            outline: none; /* Hide focus rect */
+        }
+
+        input:focus {
+            border: none;
+        }
+    </style>
+
+    <script src="Scripts/d3.js"></script>
+    <script src="Scripts/MILJS.js"></script>
+</head>
+
+<body onload="load()" style="overflow: hidden; position: fixed">
+    <div id="svgHostDiv">
+        <svg width="1200" height="800"/>
+
+        <!-- The label editor "control" [must create this AFTER the svg so that it will always be displayed on top of the svg] -->
+        <!-- Also, the body requires "overflow: hidden; position: fixed" to prevent divLabelEditor from causing the page to scroll/shift when the editor appears such that it is partially outside the window -->
+        <div id="divLabelEditor" style="position: absolute; top: 100px; left: 100px; width: 179px; height: 26px; background-color: gray; display: none; border: 1px solid black;">
+            <table cellpadding="0" cellspacing="0">
+                <tr>
+                    <td><input id="inputLabel" style="width: 128px; height: 18px; margin: 4px 4px 4px 4px; padding: 0px 0px 0px 2px; border: none;" onkeypress="onLabelKeyPress()" /></td>
+                    <td><div onclick="acceptLabel(true)" style="cursor: pointer; color: white; padding: 0px; position: absolute; top: -2px; left: 139px; font-family: 'Segoe UI'; font-size: 22px;">&#x1f5f8;</div></td>
+                    <td><div onclick="acceptLabel(false)" style="cursor: pointer; color: white; padding: 0px; position: absolute; top: 0px; left: 159px; font-family: 'Segoe UI'; font-size: 16px">&#x2717;</div></td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        function load()
+        {
+            // Check for a compatible browser (currently only IE11)
+            if (navigator.userAgent.indexOf("rv:11.0) like Gecko") == -1)
+            {
+                var isIERunningInCompatabilityMode = (navigator.userAgent.indexOf("Trident") != -1) && (navigator.userAgent.indexOf("MSIE") != -1);
+                var msg = "Attention: MILJS.js currently only runs on IE11" +
+                    (isIERunningInCompatabilityMode ? ", and with Tools -> Compatability View settings -> 'Display intranet sites in Compatability View' turned off (unchecked)." : " (not " + navigator.userAgent + ").");
+                alert(msg);
+            }
+            else
+            {
+                loadJson();
+                // Replace the call to loadJson() with start() if we just want to use random data
+                // start();
+            }
+        }
+
+        function loadJson()
+        {
+            d3.json("StateData.json", function onParseComplete(error, graph)
+            {
+                if (error) throw error;
+
+                var svg = d3.select("svg");
+                var width = +svg.attr("width"), height = +svg.attr("height");
+                const marginX = 100; // To keep the circles from crowding the edge of the SVG
+                const marginY = marginX * (height / width);
+                var partyColors = ["MediumBlue", "Firebrick", "Purple"];
+                var partyColor = d3.scaleOrdinal().domain(["Democrat", "Republican", "Swing"]).range(partyColors);
+                var items = [];
+                var maxPopulation = 0, minPopulation = 999999999;
+                var maxRadius = 70, minRadius = 15;
+
+                // StateDate.json is already pre-sorted by Population (descending), so to create additional 
+                // randomness (so that we can better demonstrate sorting gestures) we shuffle the data
+                graph.nodes.sort(function () { return (Math.random() - 0.5); });
+
+                graph.nodes.forEach(function (v, i)
+                {
+                    maxPopulation = Math.max(v.Population, maxPopulation);
+                    minPopulation = Math.min(v.Population, minPopulation);
+                });
+                maxPopulation = Math.sqrt(maxPopulation);
+                minPopulation = Math.sqrt(minPopulation);
+
+                graph.nodes.forEach(function (v, i)
+                {
+                    var item = {
+                        x: (Math.random() * (width - (marginX * 2))) + marginX,
+                        y: (Math.random() * (height - (marginY * 2))) + marginY,
+                        r: (((Math.sqrt(v.Population) - minPopulation) / (maxPopulation - minPopulation)) * maxRadius) + minRadius,
+                        party: v.Party,
+                        color: partyColor(v.Party),
+                        label: v.State,
+                        groupID: "", // Eg. "Ink1"
+                        isCopy: false
+                    };
+
+                    items.push(item);
+                });
+
+                start(items, partyColors);
+            });
+        }
+
+        function start(items, availableColors)
+        {
+            var _svg = d3.select("svg").attr("overflow", "hidden"); // Clip to bounds
+            var _width = +_svg.attr("width"), _height = +_svg.attr("height");
+
+            // Initialize MIL [MUST do this first]
+            var _g = d3.select(MIL.Initialize(_svg));
+            var _divSvgHost = d3.select("#svgHostDiv");
+
+            MIL.Utils.EnableKeyboardHandler(_divSvgHost, true);
+            _divSvgHost.on("keydown", onKeyDown); // To capture '?' [for debugging]
+
+            // Create the visualization data
+            const numCircles = 40;
+            const marginX = 100; // To keep the circles from crowding the edge of the SVG
+            const marginY = marginX * (_height / _width);
+            const minRadius = 15, maxRadius = Math.min(marginY, 50);
+            var _availableColors = availableColors || ["LightSteelBlue", "IndianRed", "YellowGreen"];
+
+            var _items = items || d3.range(numCircles).map(function createDataItem(i)
+            {
+                return ({
+                    x: (Math.random() * (_width - (marginX * 2))) + marginX,
+                    y: (Math.random() * (_height - (marginY * 2))) + marginY,
+                    r: (Math.random() * (maxRadius - minRadius)) + minRadius,
+                    color: _availableColors[Math.floor(Math.random() * _availableColors.length)],
+                    label: "(Circle " + (i + 1) + ")",
+                    groupID: "", // Eg. "Ink1"
+                    isCopy: false
+                });
+            });
+
+            // Create the "visualization" of the data
+            var _circles = _g.selectAll("circle")
+                .data(_items)
+                .enter()
+                .append("circle")
+                .attr("r", function (d) { return (d.r); })
+                .style("fill", function (d) { return (d.color); })
+                .each(function (d, i)
+                {
+                    // Just for some flash, animate the circle into its starting position (from the center of the SVG)
+                    var circle = d3.select(this);
+                    circle.transition()
+                        .duration(1500)
+                        .tween("AnimatePosition", function animatePosition()
+                        {
+                            var startX = _width / 2;
+                            var startY = _height / 2;
+                            var endX = circle.datum().x;
+                            var endY = circle.datum().y;
+                            var interpolateX = d3.interpolateNumber(startX, endX);
+                            var interpolateY = d3.interpolateNumber(startY, endY);
+
+                            return (function onAnimationTick(t)
+                            {
+                                circle.attr("cx", interpolateX(t));
+                                circle.attr("cy", interpolateY(t));
+                            });
+                        });
+                });
+
+            // Add a line that will connect a circle to divLabelEditor (when shown)
+            _g.append("line").attr("id", "editorConnectorLine").style("display", "none").style("stroke", "gray");
+
+            // Dynamically create SVG radialGradient elements [used to indicate that a circle is selected WITHOUT obscuring the circle's color]
+            var svgNS = _svg.node().namespaceURI;
+            for (var i = 0; i < _availableColors.length; i++)
+            {
+                var selectedGradient = document.createElementNS(svgNS, "radialGradient");
+                var color = _availableColors[i];
+                selectedGradient.setAttribute("id", "selected" + color);
+                var stop1 = document.createElementNS(svgNS, "stop");
+                var stop2 = document.createElementNS(svgNS, "stop");
+                stop1.setAttribute("offset", "60%");
+                stop1.setAttribute("stop-color", color);
+                stop2.setAttribute("offset", "61%");
+                stop2.setAttribute("stop-color", "LightYellow");
+                selectedGradient.appendChild(stop1);
+                selectedGradient.appendChild(stop2);
+
+                var defs = _svg.node().querySelector("defs") || _svg.node().insertBefore(document.createElementNS(svgNS, "defs"), _svg.node().firstChild);
+                defs.appendChild(selectedGradient);
+
+                // Create the corresponding CSS class
+                // Note: We use !important to override the fill set via the inline-style during intialization
+                document.styleSheets[0].addRule("circle.selected" + color, "fill: url(#selected" + color + ") !important");
+            }
+
+            var _copyTarget = null;
+            var _lineGenerator = d3.line()
+                .curve(d3.curveBasis)
+                .x(function (d) { return (d.x); })
+                .y(function (d) { return (d.y); });
+
+            var _allowPanning = true;
+            var _groups = {}; // Key: InkID, Value = Array of circles in group
+
+            MIL.DebugFeature(MIL.FeatureNames.GestureRecognition, true);
+            // MIL.DebugFeature(MIL.FeatureNames.ShapeRecognition, true);
+            MIL.DebugFeature(MIL.FeatureNames.Hover, true);
+
+            // Add the svg-level gestures
+            MIL.Settings(_svg).MinZoomLevel(0.5).MaxZoomLevel(2).IsRightMouseClickAllowed(false).HoverTimeoutInMs(500);
+            MIL.GestureDefaults.Target(_svg).StartedHandler(onSvgGestureStarted).EndedHandler(onSvgGestureEnded).RecognitionTimeoutInMs(150);
+            MIL.Controls.Frame(_svg).Class("MILFrameControl");
+
+            // We MUST add PasteTap BEFORE Pan so that MIL will find it first, then search again if PasteTap exceeds its completion timeout
+            MIL.AddGesture(MIL.BuiltInGestures.Tap("PasteTap", _svg, "touch", copyCircle).Conditional(function () { return (_copyTarget != null); }));
+            MIL.AddGesture(MIL.CreateGesture("Pan").PointerType("touch"));
+            MIL.AddGesture(MIL.CreateGesture("Zoom").PointerType("touch:2").CheckForGesturesOnEnd(true)); // We set CheckForGesturesOnEnd(true) to allow Zoom to become a Pan if only one finger is lifted
+            MIL.AddGesture(MIL.CreateGesture("LassoSelection").PointerType("pen").Conditional(function () { return (MIL.PenButtons(this.Target()) == MIL.PenButton.Barrel); }));
+            MIL.AddGesture(MIL.CreateGesture("GroupSelection").PointerType("pen").Conditional(function () { return (MIL.PenButtons(this.Target()) == MIL.PenButton.None); })); 
+
+            addCircleGestures(_circles);
+
+            function addCircleGestures(circlesSelection)
+            {
+                // Add the per-item gestures
+                circlesSelection.each(function addItemGestures(d, i)
+                {
+                    var circle = d3.select(this); // When using .each(), 'this' is set to the DOM element associated with 'd'
+
+                    // Add a tap gesture (to select)
+                    var tapGesture = MIL.BuiltInGestures.Tap("CircleTap", circle, "touch", function onTap()
+                    {
+                        if (_copyTarget != null)
+                        {
+                            _copyTarget.classed("copySelected", false);
+                            _copyTarget = null;
+                        }
+                        circle.classed("selected" + d.color, !circle.classed("selected" + d.color));
+                    }, 135, 5);
+                    MIL.AddGesture(tapGesture);
+
+                    // Add a drag gesture (to move) [this could also end up being a 'Hold' gesture (to copy)]
+                    var dragGesture = MIL.CreateGesture("CircleDrag*") // The '*' will get replaced with a unique ID
+                        .PointerType("touch")
+                        .Target(circle)
+                        .RecognitionTimeoutInMs(0)
+                        .GestureStartedHandler(function onDragStarted()
+                        {
+                            log("Gesture '" + this.Name() + "' started");
+
+                            // Ensure that the circle will move on top of all other circles
+                            bringCircleToFront(this);
+
+                            // Add a timer to determine if the drag is really a "hold" (to copy)
+                            var isHoldTimerRunning = true;
+                            var holdTimerID = setTimeout(function onHoldTimeout()
+                            {
+                                dragGesture.Cancel("'Hold' detected");
+
+                                var className = "copySelected";
+
+                                if (circle.classed(className))
+                                {
+                                    circle.classed(className, false);
+                                    _copyTarget = null;
+                                }
+                                else
+                                {
+                                    if (_copyTarget != null)
+                                    {
+                                        _copyTarget.classed(className, false);
+                                    }
+                                    circle.classed(className, true);
+                                    _copyTarget = circle;
+                                }
+                                isHoldTimerRunning = false;
+                            }, 200);
+
+                            var previousPoint = this.GetStartSvgPoint("{P1}");
+                            this.OnMoveHandler(function onDragMove()
+                            {
+                                var currentPoint = this.GetCurrentSvgPoint("{P1}");
+                                var deltaX = (currentPoint.x - previousPoint.x);
+                                var deltaY = (currentPoint.y - previousPoint.y);
+                                if ((deltaX != 0) || (deltaY != 0))
+                                {
+                                    if (isHoldTimerRunning && (Math.abs(deltaX) + Math.abs(deltaY) <= 10))
+                                    {
+                                        // Reject minor movement as 'jitter' while we check if the use is holding the circle
+                                        return;
+                                    }
+                                    else
+                                    {
+                                        clearTimeout(holdTimerID);
+                                        isHoldTimerRunning = false;
+                                    }
+
+                                    circle.attr("cx", +circle.attr("cx") + deltaX);
+                                    circle.attr("cy", +circle.attr("cy") + deltaY);
+                                }
+                                previousPoint = currentPoint;
+                            });
+
+                            hideLabelEditor();
+                        })
+                        .GestureEndedHandler(function onDragEnded()
+                        {
+                            // Remove the circle from whatever group it's currently a member of
+                            var existingGroupID = circle.datum().groupID;
+                            if (existingGroupID != "")
+                            {
+                                var index = _groups[existingGroupID].indexOf(circle.node());
+                                _groups[existingGroupID].splice(index, 1);
+                                circle.datum().groupID = "";
+                            }
+
+                            // Check if the circle was dragged inside a group and if so, add it to that group
+                            for (var inkID in _groups)
+                            {
+                                var ink = MIL.GetInkByID(inkID);
+                                if (MIL.Utils.IsPointInPolygon(ink.PathPoints(), circle.attr("cx"), circle.attr("cy")))
+                                {
+                                    _groups[inkID].push(circle.node());
+                                    circle.datum().groupID = inkID;
+                                    break;
+                                }
+                            }
+
+                            log("Gesture '" + this.Name() + "' ended");
+                        });
+                    MIL.AddGesture(dragGesture);
+
+                    // Add a shape-recognizer gesture to select circles that are larger/smaller in size than the current circle
+                    // Note: We add this gesture before adding the SelectBetween gesture, since they both use the pen but this gesture
+                    //       also requires that the pen button be pressed [ie. a more specific definition than shapeRecognizerGesture]
+                    var shapeRecognizerGesture = MIL.BuiltInGestures.ShapeRecognizer("ShapeRecognizer", circle, "pen", 0.75, function onShapeRecognized(shapeName)
+                    {
+                        log("Shape recognized: " + (shapeName || "(None)"))
+
+                        if (shapeName)
+                        {
+                            var radius = +circle.attr("r");
+                            switch (shapeName)
+                            {
+                                case MIL.RecognizableShapes.GreaterThan:
+                                case MIL.RecognizableShapes.LessThan:
+                                    var lookForSmaller = (shapeName == MIL.RecognizableShapes.LessThan);
+                                    var lookForLarger = (shapeName == MIL.RecognizableShapes.GreaterThan);
+                                    var affectedCircles = _g.selectAll("circle").filter(function ()
+                                    {
+                                        var isSmaller = lookForSmaller && (+this.getAttribute("r") <= radius);
+                                        var isLarger = lookForLarger && (+this.getAttribute("r") >= radius);
+
+                                        if (isSmaller || isLarger)
+                                        {
+                                            var circle = d3.select(this);
+                                            var className = "selected" + circle.datum().color;
+                                            circle.classed(className, true);
+                                        }
+                                        return (isSmaller || isLarger);
+                                    });
+                                    break;
+
+                                // A "select all circles of the same color" gesture
+                                case MIL.RecognizableShapes.CheckMark:
+                                    var targetColor = circle.datum().color;
+                                    var className = "selected" + targetColor;
+                                    var affectedCircles = _g.selectAll("circle").filter(function (d, i)
+                                    {
+                                        if (d.color == targetColor)
+                                        {
+                                            d3.select(this).classed(className, true);
+                                        }
+                                    });
+                                    break;
+
+                                // A "de-select all circles" gesture
+                                case MIL.RecognizableShapes.XOut:
+                                    _g.selectAll("circle").filter(function ()
+                                    {
+                                        var circle = d3.select(this);
+                                        var className = "selected" + circle.datum().color;
+                                        circle.classed(className, false);
+                                    });
+                                    break;
+
+                                // A "delete a copied circle" gesture
+                                case MIL.RecognizableShapes.StrikeThroughHorizontal:
+                                    if (circle.datum().isCopy)
+                                    {
+                                        _items.splice(_items.indexOf(circle.datum()), 1)
+                                        circle.remove();
+                                        hideLabelEditor(circle.node());
+                                        MIL.RemoveGesturesByTarget(circle);
+                                    }
+                            }
+                        }
+                    }, "cometTailLine").Conditional(function () { return (MIL.PenButtons(this.Target()) == MIL.PenButton.Barrel); });
+                    MIL.AddGesture(shapeRecognizerGesture);
+
+                    // Add a gesture to select circles that are between the sizes of the circles where the gesture starts and ends
+                    var circleStart = null, circleEnd = null;
+                    var temporaryTrackingLine = null;
+                    var selectBetweenGesture = MIL.CreateGesture("SelectBetween*")
+                        .PointerType("pen")
+                        .Target(circle)
+                        .RecognitionTimeoutInMs(0)
+                        .GestureStartedHandler(function ()
+                        {
+                            var startPoint = this.GetCurrentSvgPoint("{P1}");
+                            circleStart = this.Target();
+                            temporaryTrackingLine = _g.append("line")
+                                .attr("x1", +circleStart.getAttribute("cx"))
+                                .attr("y1", +circleStart.getAttribute("cy"))
+                                .attr("x2", startPoint.x)
+                                .attr("y2", startPoint.y)
+                                .attr("class", "selectBetweenLine")
+                                .style("pointer-events", "none"); // So that the tracking line is not hit-testable
+
+                            this.OnMoveHandler(function ()
+                            {
+                                var currentPoint = this.GetCurrentSvgPoint("{P1}");
+                                temporaryTrackingLine.attr("x2", currentPoint.x).attr("y2", currentPoint.y)
+                            });
+
+                            hideLabelEditor();
+                        })
+                        .GestureEndedHandler(function ()
+                        {
+                            var endScreenPoint = this.GetCurrentScreenPoint("{P1}");
+
+                            temporaryTrackingLine.attr("display", "none"); // To prevent always returning temporaryTrackingLine
+                            var elementUnderPointer = document.elementFromPoint(endScreenPoint.x, endScreenPoint.y);
+                            temporaryTrackingLine.attr("display", "");
+
+                            circleEnd = (elementUnderPointer instanceof SVGCircleElement) ? elementUnderPointer: null;
+
+                            if (circleEnd != null)
+                            {
+                                if (circleEnd != circleStart)
+                                {
+                                    var minRadius = Math.min(+circleStart.getAttribute("r"), +circleEnd.getAttribute("r"));
+                                    var maxRadius = Math.max(+circleStart.getAttribute("r"), +circleEnd.getAttribute("r"));
+
+                                    var affectedCircles = _g.selectAll("circle").filter(function (d)
+                                    {
+                                        var radius = +this.getAttribute("r");
+                                        if ((radius >= minRadius) && (radius <= maxRadius))
+                                        {
+                                            var circle = d3.select(this);
+                                            var className = "selected" + circle.datum().color;
+                                            circle.classed(className, true);
+                                            return (true);
+                                        }
+                                    });
+                                }
+                            }
+                            else
+                            {
+                                showLabelEditor(circleStart, temporaryTrackingLine, this.GetCurrentScreenPoint("{P1}"));
+
+                                /*
+                                // DEBUG: Compass heading test
+                                var startPoint = { x: +temporaryTrackingLine.attr("x1"), y: +temporaryTrackingLine.attr("y1") };
+                                var endPoint = this.GetCurrentSvgPoint("{P1}");
+                                var heading = MIL.Utils.GetHeadingFromPoints(startPoint, endPoint);
+                                var compassHeading = MIL.Utils.GetCompassHeading(heading, 8);
+                                showLabelEditor(circleStart, temporaryTrackingLine, this.GetCurrentScreenPoint("{P1}"), compassHeading);
+                                */
+                            }
+                            temporaryTrackingLine.remove();
+                        });
+                    MIL.AddGesture(selectBetweenGesture);
+
+                    var hoverGesture = MIL.CreateGesture("HoverInfo*")
+                        .PointerType("hover")
+                        .Target(circle)
+                        .RecognitionTimeoutInMs(0)
+                        .GestureStartedHandler(function ()
+                        {
+                            log("HoverInfo started");
+
+                            circleStart = this.Target();
+                            temporaryTrackingLine = _g.append("line")
+                                .attr("x1", +circleStart.getAttribute("cx"))
+                                .attr("y1", +circleStart.getAttribute("cy"))
+                                .attr("x2", +circleStart.getAttribute("cx"))
+                                .attr("y2", +circleStart.getAttribute("cy") - 100)
+                                .attr("class", "selectBetweenLine");
+
+                            var screenPoint = { x: +circleStart.getAttribute("cx"), y: +circleStart.getAttribute("cy") - 100 };
+
+                            showLabelEditor(circleStart, temporaryTrackingLine, screenPoint);
+                            temporaryTrackingLine.remove();
+
+                            /*
+                            // Ensure that the circle will move on top of all other circles
+                            bringCircleToFront(this);
+
+                            var previousPoint = this.GetStartSvgPoint("{P1}");
+                            this.OnMoveHandler(function onDragMove()
+                            {
+                                var currentPoint = this.GetCurrentSvgPoint("{P1}");
+                                var deltaX = (currentPoint.x - previousPoint.x);
+                                var deltaY = (currentPoint.y - previousPoint.y);
+                                if ((deltaX != 0) || (deltaY != 0))
+                                {
+                                    circle.attr("cx", +circle.attr("cx") + deltaX);
+                                    circle.attr("cy", +circle.attr("cy") + deltaY);
+                                }
+                                previousPoint = currentPoint;
+                            });
+                            */
+                        })
+                        .GestureEndedHandler(function ()
+                        {
+                            log("HoverInfo ended");
+                            hideLabelEditor(this.Target());
+                        });
+                    MIL.AddGesture(hoverGesture);
+                });
+            }
+
+            function log(msg)
+            {
+                MIL.Utils.Log(msg, "App");
+            }
+
+            function bringCircleToFront(gesture)
+            {
+                // Remove/re-add the circle to change its z-order to "top most" [so that it will be on top of all other circles]...
+                var circle = gesture.BringTargetToFront();
+
+                // ...and make the corresponding change to _items [so that the order of the svg elements matches the order of the underlying data]
+                var index = _items.indexOf(circle.datum());
+                var item = _items.splice(index, 1)[0];
+                _items.push(item);
+            }
+
+            function copyCircle()
+            {
+                if (_copyTarget == null)
+                {
+                    return;
+                }
+
+                // Duplicate _copyTarget
+                var item = _copyTarget.datum();
+                var newItem = {};
+
+                for (var prop in item)
+                {
+                    newItem[prop] = item[prop];
+                }
+                newItem.x = this.GetCurrentSvgPoint("{P1}").x;
+                newItem.y = this.GetCurrentSvgPoint("{P1}").y;
+                // newItem.label = "(" + "Copy of " + item.label.replace(/\(|\)/g, "") + ")";
+                newItem.label = "(Circle " + (_items.length + 1) + ")";
+                newItem.groupID = ""; // Eg. "Ink1"
+                newItem.isCopy = true;
+
+                _items.push(newItem);
+
+                /*
+                // Note: Using this technique (selectAll/enter) to add a new circle element REQUIRES that _items be kept in sync with the order of the circles in the svg
+                //       [but because it re-processes all _items it's slower than the "simple append" technique (see below)]] 
+                var newCircle = _g.selectAll("circle")
+                    .data(_items)
+                    .enter()
+                    .append("circle")
+                    .attr("cx", function (d) { return (d.x); })
+                    .attr("cy", function (d) { return (d.y); })
+                    .attr("r", function (d) { return (d.r); })
+                    .style("fill", function (d) { return (d.color); })
+                    .style("opacity", "0");
+                */
+
+                // Note: Using this technique (simple append) to add a new circle element does NOT require that _items be kept in sync with the order of the circles in the svg
+                var newCircle = _g.append("circle")
+                    .attr("cx", newItem.x)
+                    .attr("cy", newItem.y)
+                    .attr("r", newItem.r)
+                    .style("fill", newItem.color)
+                    .style("opacity", "0")
+                    .datum(newItem);
+
+                addCircleGestures(newCircle);
+
+                // Fade-in the new circle
+                MIL.Utils.Fade(newCircle, 400, null, null, true, _copyTarget.style("opacity"));
+
+                _copyTarget.classed("copySelected", false);
+                _copyTarget = null;
+            }
+
+            function onSvgGestureStarted()
+            {
+                var gesture = this;
+
+                log("The '" + gesture.Name() + "' gesture started (using " + gesture.ActivePointerList().join(", ") + ")");
+
+                switch (gesture.Name())
+                {
+                    case "Zoom":
+                        var startZoomDistance = gesture.GetDistance("{P1}", "{P2}");
+                        var startZoomLevel = MIL.Zoom(_svg);
+
+                        _allowPanning = false;
+
+                        gesture.OnMoveHandler(function onZoomMove()
+                        {
+                            var zoomDistance = this.GetDistance("{P1}", "{P2}");
+                            var prevZoom = MIL.Zoom(_svg);
+                            var newZoom = (zoomDistance / startZoomDistance) * startZoomLevel;
+                            var focalScreenPoint = MIL.Utils.GetLineMidPoint(this.GetCurrentScreenPoint("{P1}"), this.GetCurrentScreenPoint("{P2}"));
+
+                            if (newZoom != prevZoom)
+                            {
+                                MIL.Zoom(_svg, newZoom, focalScreenPoint);
+                            }
+                        });
+                        hideLabelEditor();
+                        break;
+
+                    case "Pan":
+                        var prevPanTouchPoint = gesture.GetCurrentScreenPoint("{P1}");
+
+                        gesture.OnMoveHandler(function onPanMove()
+                        {
+                            var newTouchPoint = this.GetCurrentScreenPoint("{P1}");
+                            var deltaXInPixels = newTouchPoint.x - prevPanTouchPoint.x;
+                            var deltaYInPixels = newTouchPoint.y - prevPanTouchPoint.y;
+
+                            if (_allowPanning)
+                            {
+                                MIL.PanRelative(_svg, deltaXInPixels, deltaYInPixels);
+                            }
+                            prevPanTouchPoint = newTouchPoint;
+                        });
+                        hideLabelEditor();
+                        break;
+
+                    case "LassoSelection":
+                        gesture.Ink("{P1}").Class("lassoLine").IsAutoClose(true).Start();
+                        break;
+
+                    case "GroupSelection":
+                        gesture.Ink("{P1}")
+                            .Class("groupLine")
+                            .HullType(MIL.InkHullType.Concave)
+                            .HullColor("rgba(176, 196, 222, 0.3)") // LightSteelBlue w/ opacity of 0.3
+                            .IsAutoClose(true)
+                            .ResizeWith("touch:2")
+                            .OnResizeCompleteHandler(function () { layoutCirclesInGroup(this, "nosort", 300); })
+                            .Start();
+                        break;
+                }
+            }
+
+            function onSvgGestureEnded(liftedPointerID)
+            {
+                var gesture = this;
+
+                log("The '" + gesture.Name() + "' gesture ended");
+
+                switch (gesture.Name())
+                {
+                    case "Zoom":
+                        _allowPanning = true;
+                        break;
+
+                    case "LassoSelection":
+                        // Select/de-select the circles whose centroids lie within the lasso region
+                        var circles = MIL.Utils.FindShapeElementsInRegion(_g, "circle", gesture.Ink(), function filterNode(circleDomElement)
+                        {
+                            // This is a 'filter' function, but we can also use it to do the actual selection/de-selection
+                            var circle = d3.select(circleDomElement);
+                            var className = "selected" + circle.datum().color;
+                            circle.classed(className, !circle.classed(className));
+
+                            return (true); // Include this circle in the results
+                        });
+
+                        // Fade-out the lasso
+                        MIL.Utils.Fade(gesture.Ink().Path(), 400, null, function onFadeComplete()
+                        {
+                            // Remove the lasso ink
+                            gesture.Ink().Delete();
+                        });
+                        break;
+
+                    case "GroupSelection":
+                        var ink = gesture.Ink();
+
+                        // Check if the [convex] area of the drawn region is "too small"
+                        var inkConvexArea = ink.GetConvexArea();
+                        var minCircleArea = Math.PI * Math.pow(minRadius, 2);
+
+                        if ((inkConvexArea < minCircleArea) || ink.IsStraightLine())
+                        {
+                            ink.Delete();
+                        }
+                        else
+                        {
+                            addGroupGestures(ink);
+
+                            // Find all the circles whose centroids lie within the group region
+                            var groupCircles = MIL.Utils.FindShapeElementsInRegion(_g, "circle", ink, function filterNode(circleDomElement) 
+                            {
+                                d3.select(circleDomElement).datum().groupID = ink.InkID();
+                                return (true); // Include this circle in the results
+                            });
+
+                            var populatingEmptyGroup = (groupCircles.length == 0);
+
+                            if (groupCircles.length == 0)
+                            {
+                                // The group is empty, so move any selected circles into the group
+                                var selectedCircles = _g.selectAll("circle").filter(function ()
+                                {
+                                    var circle = d3.select(this);
+                                    var className = "selected" + circle.datum().color;
+                                    var isSelected = circle.classed(className);
+                                    if (isSelected)
+                                    {
+                                        groupCircles.push(this);
+                                        circle.datum().groupID = ink.InkID();
+                                    }
+                                    return (isSelected);
+                                });
+                            }
+
+                            // Remove the circles from any existing groups [a circle should only belong to one group at a time]
+                            for (var inkID in _groups)
+                            {
+                                var circles = _groups[inkID];
+                                for (var i = 0; i < groupCircles.length; i++)
+                                {
+                                    var index = circles.indexOf(groupCircles[i]);
+                                    if (index != -1)
+                                    {
+                                        circles.splice(index, 1);
+                                    }
+                                }
+
+                                // Remove the group if it's now empty
+                                if (circles.length == 0)
+                                {
+                                    delete _groups[inkID];
+                                    MIL.GetInkByID(inkID).Delete();
+                                }
+                            }
+
+                            // Add the new group
+                            _groups[ink.InkID()] = groupCircles;
+
+                            // If needed, physically move the group's circles so that they're inside the group Ink
+                            if (populatingEmptyGroup)
+                            {
+                                layoutCirclesInGroup(ink, "nosort");
+                            }
+                        }
+                        break;
+                }
+            }
+
+            function layoutCirclesInGroup(groupInk, sortType, animationTimeInMs)
+            {
+                var inkID = groupInk.InkID();
+
+                if ((_groups[inkID] === undefined) || (_groups[inkID].length == 0))
+                {
+                    return;
+                }
+
+                animationTimeInMs = animationTimeInMs || 750
+
+                var groupCircles = d3.selectAll(_groups[inkID]);
+                var groupCirclesCount = groupCircles.size();
+
+                if (groupCirclesCount > 0)
+                {
+                    // Move the circles so that they're located inside the group (ink)
+                    var gridPoints = groupInk.GetLayoutGridPoints(groupCirclesCount);
+
+                    hideLabelEditor();
+
+                    switch (sortType)
+                    {
+                        case "nosort":
+                            // No-op
+                            break;
+                        case "ascending":
+                            groupCircles = groupCircles.sort(function compare(a, b) { return (a.r < b.r ? -1 : (a.r > b.r ? 1 : 0)); })
+                            break;
+                        case "descending":
+                            groupCircles = groupCircles.sort(function compare(a, b) { return (a.r > b.r ? -1 : (a.r < b.r ? 1 : 0)); })
+                            break;
+                        default:
+                            throw "Invalid sortType '" + sortType + "'";
+                    }
+
+                    groupCircles.each(function (d, i)
+                    {
+                        var circle = d3.select(this);
+                        var className = "selected" + circle.datum().color;
+
+                        // De-select the circle
+                        circle.classed(className, false);
+
+                        // Animate the movement of the circle
+                        circle.transition()
+                            .duration(animationTimeInMs)
+                            .tween("AnimatePosition", function animatePosition()
+                            {
+                                var startX = +circle.attr("cx");
+                                var endX = gridPoints[i].x;
+                                var startY = +circle.attr("cy");
+                                var endY = gridPoints[i].y;
+                                var interpolateX = d3.interpolateNumber(startX, endX);
+                                var interpolateY = d3.interpolateNumber(startY, endY);
+
+                                return (function onAnimationTick(t)
+                                {
+                                    circle.attr("cx", interpolateX(t));
+                                    circle.attr("cy", interpolateY(t));
+                                });
+                            });
+                    });
+                }
+            }
+
+            function addGroupGestures(ink)
+            {
+                if (ink.HullPath() == null)
+                {
+                    return;
+                }
+
+                MIL.GestureDefaults.Reset().Target(ink.HullPath()).GroupName("GroupGestures");
+
+                // Add a tap (to erase) gesture
+                var tapToErase = MIL.BuiltInGestures.Tap("HullTapWithPenEraser", ink.HullPath(), "pen", function onHullTap()
+                {
+                    d3.selectAll(_groups[ink.InkID()]).each(function(d, i) { d.groupID = ""; });
+                    delete _groups[ink.InkID()];
+                    ink.Delete();
+                }, 250, 15);
+                MIL.AddGesture(tapToErase.Conditional(function () { return (MIL.PenButtons(ink.HullPath()) == MIL.PenButton.Eraser); }));
+
+                // Add a drag gesture (to move the group and all the circles in the group)
+                var dragGesture = MIL.CreateGesture("HullDrag*") // The '*' will get replaced with a unique ID
+                    .PointerType("touch")
+                    .GestureStartedHandler(function onHullDragStarted()
+                    {
+                        log("Gesture '" + this.Name() + "' started");
+
+                        // Find all the circles whose centroids lie within the group region
+                        var groupCircles = _groups[ink.InkID()];
+
+                        ink.OnDragMoveHandler(function onDragMove(deltaX, deltaY)
+                        {
+                            // Move each of the circles in the group
+                            for (var i = 0; i < groupCircles.length; i++)
+                            {
+                                groupCircles[i].setAttribute("cx", +groupCircles[i].getAttribute("cx") + deltaX);
+                                groupCircles[i].setAttribute("cy", +groupCircles[i].getAttribute("cy") + deltaY);
+                            }
+                        });
+
+                        hideLabelEditor();
+
+                        ink.DragStart(this, null);
+                    })
+                    .GestureEndedHandler(function onHullDragEnded()
+                    {
+                        log("Gesture '" + this.Name() + "' ended");
+                        ink.DragEnd();
+
+                        var overlappingInks = MIL.Utils.FindShapeElementsInRegion(_g, "ink", ink, function selectionFilter(inkObj)
+                        {
+                            return (inkObj.Class() == "groupLine");
+                        }, 0);
+
+                        if (overlappingInks.length == 1) // We only found the Ink being dragged
+                        {
+                            // Check if the new ink is wholly inside an existing group
+                            for (var inkID in _groups)
+                            {
+                                var targetInk = MIL.GetInkByID(inkID);
+                                if ((targetInk.Class() == "groupLine") && ink.IsInside(targetInk))
+                                {
+                                    overlappingInks.push(targetInk);
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (overlappingInks.length > 1) // No-op if we only found the Ink being dragged
+                        {
+                            // Combine/delete the corresponding _groups
+                            var combinedCircles = [];
+                            for (var i = 0; i < overlappingInks.length; i++)
+                            {
+                                var inkID = overlappingInks[i].InkID();
+                                combinedCircles = combinedCircles.concat(_groups[inkID]);
+                                delete _groups[inkID];
+                            }
+
+                            // Combine the Inks
+                            var combinedInk = dragGesture.CombineInks(overlappingInks, "groupLine", true);
+                            addGroupGestures(combinedInk);
+
+                            // Add a new _groups entry for the combined Ink
+                            // Note: Because we combined the circles of the existing groups rather than recomputing the membership based on the new [convex]
+                            //       group, it's possible for circles to "appear" to belong to the new group [they're inside the boundary], when they're not.
+                            //       This becomes apparent when the group is moved and these circles don't move with the group.
+                            _groups[combinedInk.InkID()] = combinedCircles;
+                            d3.selectAll(combinedCircles).each(function (d, i) { d.groupID = combinedInk.InkID(); });
+                        }
+                    });
+                MIL.AddGesture(dragGesture);
+
+                // Add a gesture to sort the circles in the group
+                var groupShapeRecognizerGesture = MIL.BuiltInGestures.ShapeRecognizer("GroupShapeRecognizer", ink.HullPath(), "pen", 0.75, function onGroupShapeRecognized(shapeName)
+                {
+                    log("Shape recognized: " + (shapeName || "(None)"))
+
+                    if (shapeName)
+                    {
+                        switch (shapeName)
+                        {
+                            case MIL.RecognizableShapes.UpArrow:
+                                layoutCirclesInGroup(ink, "ascending");
+                                break;
+                            case MIL.RecognizableShapes.DownArrow:
+                                layoutCirclesInGroup(ink, "descending");
+                                break;
+                        }
+                    }
+                }, "cometTailLine", [MIL.RecognizableShapes.UpArrow, MIL.RecognizableShapes.DownArrow]).Conditional(function () { return (MIL.PenButtons(this.Target()) == MIL.PenButton.Barrel); });
+                MIL.AddGesture(groupShapeRecognizerGesture);
+            }
+
+            function onKeyDown()
+            {
+                var e = d3.event;
+
+                // Note that e.keyCode can return "virtual key" codes (see https://lists.w3.org/Archives/Public/www-dom/2010JulSep/att-0182/keyCode-spec.html)
+                var keyCode = (e.key.length == 1) ? e.key.toUpperCase().charCodeAt(0) : e.keyCode; // Eg. For Delete, e.key is "Del"
+
+                switch (keyCode)
+                {
+                    // MIL debugging aid
+                    case "?".charCodeAt(0):
+                        MIL.ShowDebugInfo();
+                        break;
+                }
+            }
+        }
+
+        function onLabelKeyPress()
+        {
+            var e = window.event;
+
+            if (e.charCode == 13) // Enter
+            {
+                acceptLabel(true);
+            }
+            if (e.charCode == 27) // Esc
+            {
+                acceptLabel(false);
+            }
+        }
+
+        function acceptLabel(accept)
+        {
+            if (accept)
+            {
+                var inputLabel = document.getElementById("inputLabel");
+                inputLabel.data.label = inputLabel.value;
+            }
+            hideLabelEditor();
+        }
+
+        function showLabelEditor(forCircle, trackingLine, endScreenPoint, labelOverrideText)
+        {
+            var itemData = d3.select(forCircle).datum();
+            var pageScrollOffsetX = window.pageXOffset, pageScrollOffsetY = window.pageYOffset;
+
+            // Move/display/update the editor
+            var divLabelEditor = document.getElementById("divLabelEditor");
+            divLabelEditor.style.top = ((endScreenPoint.y + pageScrollOffsetY) - (MIL.Utils.ToNumber(divLabelEditor.style.height) / 2)) + "px";
+            divLabelEditor.style.left = ((endScreenPoint.x + pageScrollOffsetX) - (MIL.Utils.ToNumber(divLabelEditor.style.width) / 2)) + "px";
+            divLabelEditor._forCircle = forCircle;
+
+            setTimeout(function ()
+            {
+                var inputLabel = document.getElementById("inputLabel");
+                inputLabel.value = (labelOverrideText === undefined) ? itemData.label : labelOverrideText;
+                divLabelEditor.style.display = "";
+                inputLabel.focus();
+                inputLabel.selectionStart = inputLabel.selectionEnd = itemData.label.length;
+                inputLabel.data = itemData;
+            }, 20);
+
+            var editorConnectorLine = document.getElementById("editorConnectorLine");
+            d3.select(editorConnectorLine)
+                .attr("x1", trackingLine.attr("x1"))
+                .attr("y1", trackingLine.attr("y1"))
+                .attr("x2", trackingLine.attr("x2"))
+                .attr("y2", trackingLine.attr("y2"))
+                .style("display", "")
+                // We do this so that if (subsequently) the pen lands on the section of the line that's inside the circle, the circle will get the event
+                // and not the g (which would result in the 'GroupSelection' gesture starting which should never happen when starting inside a circle)
+                .style("pointer-events", "none");
+
+            // Make sure the line is drawn on top of the source circle
+            var parentNode = editorConnectorLine.parentNode;
+            parentNode.removeChild(editorConnectorLine);
+            parentNode.appendChild(editorConnectorLine);
+        }
+
+        function hideLabelEditor(forCircle)
+        {
+            var divLabelEditor = document.getElementById("divLabelEditor");
+
+            if (forCircle && (forCircle != divLabelEditor._forCircle))
+            {
+                return;
+            }
+            divLabelEditor.style.display = "none";
+
+            var editorConnectorLine = document.getElementById("editorConnectorLine");
+            editorConnectorLine.style.display = "none";
+        }
+    </script>
+</body>
+</html>

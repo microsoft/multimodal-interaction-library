@@ -1,0 +1,254 @@
+﻿{
+  "nodes": [
+    {
+      "State": "California",
+      "Population": 39536653,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Texas",
+      "Population": 28304596,
+      "Party": "Republican"
+    },
+    {
+      "State": "Florida",
+      "Population": 20984400,
+      "Party": "Swing"
+    },
+    {
+      "State": "New York",
+      "Population": 19849399,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Pennsylvania",
+      "Population": 12805537,
+      "Party": "Swing"
+    },
+    {
+      "State": "Illinois",
+      "Population": 12802023,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Ohio",
+      "Population": 11658609,
+      "Party": "Swing"
+    },
+    {
+      "State": "Georgia",
+      "Population": 10429379,
+      "Party": "Republican"
+    },
+    {
+      "State": "North Carolina",
+      "Population": 10273419,
+      "Party": "Republican"
+    },
+    {
+      "State": "Michigan",
+      "Population": 9962311,
+      "Party": "Democrat"
+    },
+    {
+      "State": "New Jersey",
+      "Population": 9005644,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Virginia",
+      "Population": 8470020,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Washington",
+      "Population": 7405743,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Arizona",
+      "Population": 7016270,
+      "Party": "Republican"
+    },
+    {
+      "State": "Massachusetts",
+      "Population": 6859819,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Tennessee",
+      "Population": 6715984,
+      "Party": "Republican"
+    },
+    {
+      "State": "Indiana",
+      "Population": 6666818,
+      "Party": "Swing"
+    },
+    {
+      "State": "Missouri",
+      "Population": 6113532,
+      "Party": "Swing"
+    },
+    {
+      "State": "Maryland",
+      "Population": 6052177,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Wisconsin",
+      "Population": 5795483,
+      "Party": "Swing"
+    },
+    {
+      "State": "Colorado",
+      "Population": 5607154,
+      "Party": "Swing"
+    },
+    {
+      "State": "Minnesota",
+      "Population": 5576606,
+      "Party": "Democrat"
+    },
+    {
+      "State": "South Carolina",
+      "Population": 5024369,
+      "Party": "Republican"
+    },
+    {
+      "State": "Alabama",
+      "Population": 4874747,
+      "Party": "Swing"
+    },
+    {
+      "State": "Louisiana",
+      "Population": 4684333,
+      "Party": "Republican"
+    },
+    {
+      "State": "Kentucky",
+      "Population": 4454189,
+      "Party": "Republican"
+    },
+    {
+      "State": "Oregon",
+      "Population": 4142776,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Oklahoma",
+      "Population": 3930864,
+      "Party": "Republican"
+    },
+    {
+      "State": "Connecticut",
+      "Population": 3588184,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Iowa",
+      "Population": 3145711,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Utah",
+      "Population": 3101833,
+      "Party": "Republican"
+    },
+    {
+      "State": "Arkansas",
+      "Population": 3004279,
+      "Party": "Republican"
+    },
+    {
+      "State": "Nevada",
+      "Population": 2998039,
+      "Party": "Swing"
+    },
+    {
+      "State": "Mississippi",
+      "Population": 2984100,
+      "Party": "Republican"
+    },
+    {
+      "State": "Kansas",
+      "Population": 2913123,
+      "Party": "Republican"
+    },
+    {
+      "State": "New Mexico",
+      "Population": 2088070,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Nebraska",
+      "Population": 1920076,
+      "Party": "Republican"
+    },
+    {
+      "State": "West Virginia",
+      "Population": 1815857,
+      "Party": "Swing"
+    },
+    {
+      "State": "Idaho",
+      "Population": 1716943,
+      "Party": "Republican"
+    },
+    {
+      "State": "Hawaii",
+      "Population": 1427538,
+      "Party": "Democrat"
+    },
+    {
+      "State": "New Hampshire",
+      "Population": 1342795,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Maine",
+      "Population": 1335907,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Rhode Island",
+      "Population": 1059639,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Montana",
+      "Population": 1050493,
+      "Party": "Swing"
+    },
+    {
+      "State": "Delaware",
+      "Population": 961939,
+      "Party": "Democrat"
+    },
+    {
+      "State": "South Dakota",
+      "Population": 869666,
+      "Party": "Republican"
+    },
+    {
+      "State": "North Dakota",
+      "Population": 755393,
+      "Party": "Swing"
+    },
+    {
+      "State": "Alaska",
+      "Population": 739795,
+      "Party": "Republican"
+    },
+    {
+      "State": "Vermont",
+      "Population": 623657,
+      "Party": "Democrat"
+    },
+    {
+      "State": "Wyoming",
+      "Population": 579315,
+      "Party": "Republican"
+    }
+  ]
+}

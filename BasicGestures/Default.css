@@ -1,0 +1,123 @@
+﻿svg {
+    background: #ddd;
+    font: 10px sans-serif;
+    cursor: none;
+    touch-action: none; /* Turn off default touch gestures (panning and pinching of the entire page) provided by the browser */
+}
+
+path {
+    fill: transparent; /* Note: Using 'none' will prevent the path-fill area from being hit-testable [but impacts drag performance], whereas 'transparent' IS hit-testable [but does not impact drag performance] */
+    stroke-width: 4px;
+    stroke-linejoin: round;
+    stroke-linecap: round; /* Smooths out the line */
+}
+
+path.penLine {
+    fill: none; /* Prevent hit-testing */
+    stroke: royalblue;
+}
+
+path.mouseLine {
+    fill: none; /* Prevent hit-testing */
+    stroke: whitesmoke;
+}
+
+path.touchLine {
+    fill: none; /* Prevent hit-testing */
+    stroke: indianred;
+}
+
+    path.MILLine {
+        fill: none;
+        stroke-width: 2px;
+        stroke: black;
+    }
+
+path.MILEraser {
+    stroke-width: 20px;
+    stroke: #ddd; /* MUST match svg.background */
+    pointer-events: none; /* So that the eraser line is not hit-testable */
+}
+
+path.cometTailLine {
+    fill: none;
+    stroke-width: 5px;
+    stroke: rgba(0, 180, 0, 0.5);
+}
+
+path.MILCombinedLine {
+    fill: none;
+    stroke-width: 2px;
+    stroke: darkgrey;
+}
+
+rect.MILFrameControl {
+    fill: transparent;
+    stroke-width: 3px;
+    stroke: firebrick;
+}
+
+path.MILRulerControl {
+    stroke: gray;
+    stroke-width: 0.5px;
+    fill: rgba(5, 5, 5, 0.03);
+}
+
+path.greenClass {
+    stroke: green;
+    stroke-width: 6px;
+}
+
+path.redClass {
+    stroke: red;
+    stroke-width: 6px;
+}
+
+path.purpleClass {
+    stroke: purple;
+    stroke-width: 6px;
+}
+
+/* This should be positioned in the CSS file AFTER all other path 'line' styles to give it higher precedence */
+path.selectedLine {
+    stroke: yellow;
+}
+
+rect.rectSelection {
+    fill: none;
+    stroke-width: 2px;
+    stroke: magenta;
+    stroke-dasharray: 4 4;
+}
+
+rect.rectSelectionFinal {
+    stroke: green;
+}
+
+path.lassoLine {
+    fill: none;
+    stroke-width: 2px;
+    stroke: magenta;
+    stroke-dasharray: 2 4;
+}
+
+path.combiningLassoLine {
+    fill: none;
+    stroke-width: 2px;
+    stroke: cornflowerblue;
+    stroke-dasharray: 2 4;
+}
+
+path.lassoLineFinal {
+    fill: none;
+    stroke-width: 2px;
+    stroke: green;
+    stroke-dasharray: 2 4;
+}
+
+#output {
+    padding-left: 10px;
+    font: 12px/1.4 monospace;
+    background: #eee;
+    width: 1190px;
+}

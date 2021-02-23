@@ -1,0 +1,23 @@
+{
+  "name": "multimodal-interaction-library",
+  "version": "1.0.0",
+  "description": "Multimodal Interaction Library",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc -p MIL_Lib/Scripts/tsconfig.json",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://msr-epic@dev.azure.com/msr-epic/multimodal-interaction-library/_git/multimodal-interaction-library"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/d3": "^6.3.0",
+    "typescript": "^4.1.3"
+  },
+  "dependencies": {
+    "d3": "^6.5.0"
+  }
+}
