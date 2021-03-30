@@ -1,4 +1,7 @@
-﻿namespace MIL
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+namespace MIL
 {
     // Type aliases
     /** Type of an event handler (callback) invoked when an Ink instance is being dragged. */

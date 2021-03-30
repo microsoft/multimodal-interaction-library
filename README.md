@@ -69,7 +69,7 @@ You should see a simplified whiteboard with two radial menus. One radial menu fo
 
 The figures below show snapshots of the sandbox sample. From left to right, the two radial menus collapsed, the pen color radial menu expanded, the ruler visible with the control radial menu expanded.
 
-![Sandbox](Sandbox.PNG)
+![Sandbox](Sandbox.png)
 
 You can then consume these radial menus in 8 directions (cardinal directions and intermediate directions) with a pen by doing a ballistic movement starting from the center of the menu toward one of the 8 directions.
 

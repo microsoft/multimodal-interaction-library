@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
 // MIL is a library that makes it easy to define multi-modal (pen/touch/mouse + keyboard) gestures, and to do basic inking.
 // MIL works with SVG, and supports panning and zooming.
 // MIL requires d3 (https://d3js.org/) v4.

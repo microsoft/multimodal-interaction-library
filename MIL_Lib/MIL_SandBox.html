@@ -56,11 +56,6 @@
             var _penColor = "blue";
             var _penWidth = "4"; 
 
-            // Style the ruler
-
-            // MP: Bug with VSCode fixed !!!!!!!!!!!!!!!!!!!!
-            //MIL.Controls.Ruler(_svg).Class("MILRulerControl");
-
             // Radial Menu Pen Color
 
             // Note: These images were generated from https://iconcloud.design/icons/FULL%20MDL2%20Assets/Full%20MDL2%20Assets/eb12, accessed via http://aka.ms/fonts and selecting "Full MDL2 Assets".
@@ -390,12 +385,6 @@
 
                     case "DrawWithPen":
                         var ink = gesture.Ink();
-
-                        if (ink.IsEraserDrawing())
-                        {
-                            // MP: Eraser bug fixed!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                            //disableInkHullsThatIntersectWithEraserPath(ink.PathPoints());
-                        }
                         addDrawnItemGestures(ink);
                         break;
                 }

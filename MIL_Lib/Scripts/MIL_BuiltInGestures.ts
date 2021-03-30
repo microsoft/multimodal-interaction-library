@@ -1,4 +1,7 @@
-﻿namespace MIL
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+namespace MIL
 {
     /** 
      * The BuiltInGestures namespace. 

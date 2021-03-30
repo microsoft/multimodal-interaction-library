@@ -1,4 +1,7 @@
-﻿namespace MIL
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+namespace MIL
 {
     // This is only exported because of the eventWatchdog() bug-detector code in MIL.Initialize()
     export let _activePointerCaptures: { [targetElementID: string]: string[] } = {}; // The set of PointerID's being captured to an element - Key: TargetElementID, Value = Array of PointerID
